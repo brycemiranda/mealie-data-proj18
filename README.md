@@ -54,4 +54,4 @@ Collected by Majumder, Li, Ni, McAuley (EMNLP 2019). License: CC BY-SA 3.0.
 
 ## Note
 .env file is gitignored — contains database credentials and S3 keys.
-All code assisted by Claude Sonnet 4.6.
+Partial code assisted by Claude Sonnet 4.6.
