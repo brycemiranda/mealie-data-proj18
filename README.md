@@ -1,7 +1,7 @@
 # Mealie Data Pipeline — Team Bias & Variance (proj18)
 
 Data member implementation for the personalized recipe recommender integrated into Mealie.
-Role: Bryce Miranda (bm3986) — Data
+Role: Bryce Miranda (bm3986): Data
 
 ## Project Overview
 A "Recommended for You" panel that ranks recipes in a user's Mealie library by predicted
@@ -53,5 +53,4 @@ https://www.kaggle.com/datasets/shuyangli94/food-com-recipes-and-user-interactio
 Collected by Majumder, Li, Ni, McAuley (EMNLP 2019). License: CC BY-SA 3.0.
 
 ## Note
-.env file is gitignored — contains database credentials and S3 keys.
 Partial code assisted by Claude Sonnet 4.6.
