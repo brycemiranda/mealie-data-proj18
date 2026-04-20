@@ -2,10 +2,11 @@
 """
 nightly_eval.py
 Data quality checks at 3 points:
-1. Ingestion quality — checks raw data in object storage
-2. Training set quality — checks versioned train/val datasets
-3. Live inference drift — checks production events in PostgreSQL
+1. Ingestion quality  checks raw data in object storage
+2. Training set quality  checks versioned train/val datasets
+3. Live inference drift checks production events in PostgreSQL
 Results logged to MLflow.
+All credentials read from environment variables, no hardcoded secrets.
 """
 import os, json, sys, ast
 import boto3
@@ -16,15 +17,15 @@ import mlflow
 from io import BytesIO
 from datetime import datetime
 
-# ── Config from env vars ──────────────────────────────────────────────────
+# ── Config — all from env vars, no hardcoded secrets ─────────────────────
 MINIO_ENDPOINT  = os.environ.get('MINIO_ENDPOINT', 'http://minio-service.platform.svc.cluster.local:9000')
-MINIO_ACCESS    = os.environ.get('MINIO_ACCESS_KEY', 'minioadmin')
-MINIO_SECRET    = os.environ.get('MINIO_SECRET_KEY', 'minioadmin123')
+MINIO_ACCESS    = os.environ.get('MINIO_ACCESS_KEY', '')
+MINIO_SECRET    = os.environ.get('MINIO_SECRET_KEY', '')
 BUCKET          = os.environ.get('BUCKET_NAME', 'training-data')
 MLFLOW_URL      = os.environ.get('MLFLOW_TRACKING_URI', 'http://mlflow-service.platform.svc.cluster.local:5000')
 PG_HOST         = os.environ.get('POSTGRES_HOST', 'postgres.platform.svc.cluster.local')
-PG_USER         = os.environ.get('POSTGRES_USER', 'mea')
-PG_PASS         = os.environ.get('POSTGRES_PASSWORD', 'mealie')
+PG_USER         = os.environ.get('DB_USERNAME', os.environ.get('POSTGRES_USER', ''))
+PG_PASS         = os.environ.get('DB_PASSWORD', os.environ.get('POSTGRES_PASSWORD', ''))
 PG_DB           = os.environ.get('POSTGRES_DB', 'mealie')
 
 # ── Expected values ───────────────────────────────────────────────────────
@@ -72,7 +73,6 @@ def check_ingestion():
     print("\n=== CHECK 1: Ingestion Quality ===")
     metrics = {}
 
-    # recipes
     try:
         recipes = load_parquet('processed/recipes_clean.parquet')
         count = len(recipes)
@@ -101,7 +101,6 @@ def check_ingestion():
         failed_checks.append('recipe_load')
         metrics['recipe_error'] = str(e)
 
-    # interactions
     try:
         interactions = load_parquet('processed/interactions_clean.parquet')
         count = len(interactions)
@@ -115,8 +114,7 @@ def check_ingestion():
 
         rating_dist = interactions['rating'].value_counts(normalize=True)
         metrics['rating_distribution'] = {str(k): float(v) for k,v in rating_dist.items()}
-        no_single_dominant = (rating_dist.max() < 0.80)
-        check('rating_distribution', no_single_dominant,
+        check('rating_distribution', rating_dist.max() < 0.80,
               f"max={rating_dist.max():.2%}", "no rating > 80%")
 
         weight_range_ok = interactions['weight'].between(-1.0, 1.0).mean()
@@ -164,9 +162,8 @@ def check_training_set():
               f"{train_ratio:.2%}", "75-85%")
 
         if 'user_id' in train.columns and 'user_id' in val.columns:
-            train_users = set(train['user_id'].astype(str))
-            val_users   = set(val['user_id'].astype(str))
-            overlap = len(train_users & val_users)
+            overlap = len(set(train['user_id'].astype(str)) &
+                         set(val['user_id'].astype(str)))
             metrics['user_overlap'] = overlap
             check('no_user_overlap', overlap == 0, overlap,
                   "0 overlapping users", warn=True)
@@ -180,10 +177,9 @@ def check_training_set():
         if 'timestamp' in train.columns and 'timestamp' in val.columns:
             train_max = pd.to_datetime(train['timestamp']).max()
             val_min   = pd.to_datetime(val['timestamp']).min()
-            no_leakage = train_max <= val_min
             metrics['train_max_time'] = str(train_max)
             metrics['val_min_time']   = str(val_min)
-            check('no_temporal_leakage', no_leakage,
+            check('no_temporal_leakage', train_max <= val_min,
                   f"train_max={train_max}", f"<= val_min={val_min}")
 
     except Exception as e:
@@ -200,7 +196,6 @@ def check_inference_drift():
 
     try:
         conn = pg()
-
         df = pd.read_sql("""
             SELECT user_id, recipe_id, event_type, weight, timestamp
             FROM mealie_events
@@ -244,7 +239,7 @@ def check_inference_drift():
 
     except Exception as e:
         print(f"  [WARN] PostgreSQL not reachable: {e}")
-        print("  (This is expected when running outside the cluster)")
+        print("  (Expected when running outside the cluster)")
         metrics['pg_reachable'] = 0
 
     return metrics
